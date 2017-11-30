@@ -7,6 +7,8 @@ var express = require('express'),
     async = require('async'),
     port = process.env.PORT || 3000,
     logged_users = {},
+    logged_profs = {},
+    get_users_by_ID = {},
     IDs = [];
 
 
@@ -19,42 +21,60 @@ app.use(express.static(__dirname));
 io.on('connection', function (socket) {
     console.log('connected');
 
-    //presenter client
+    //presenter
     socket.on('createID', function(){
         //generate ID and send back to prof
         var uniqueID = uniqueid.time();
         uniqueID = uniqueID.substring(4,8);
 
+        logged_profs[uniqueID] = socket;
+
         IDs.push(uniqueID);
         socket.emit('IDcreated',uniqueID);
     });
 
-    socket.on('nextSlideImage',function(slideBitmap){
-        /*send off to clients
-        async.forEachOf(logged_users, function(value, key, callback){
-            //send off http link to selected users within group
-            if(logged_users[key] in IDs){
-                key.emit('nextSlideImage', slideBitmap);
+
+    socket.on('nextSlideImage',function(slideBitmap){   //slideBitmap consists of 4 char session id, 'Δ', actual base64 coded bitmap string
+        var id = slideBitmap.substring(0,4);            //get id
+        var pic = slideBitmap.substring(5);             //get bitmap
+
+        //for loop
+        async.forEachOf(logged_users, function(sock, username, callback){
+            //test if session ID is valid and if user is in this session
+            if (IDs.indexOf(id) > -1 && get_users_by_ID[username] === id) {
+                sock.emit('nextSlideImage', pic);
             }
-        });*/
-        socket.broadcast.emit('nextSlideImage', slideBitmap);
-        console.log('nextSlideImage: ' + slideBitmap );
+        });
     });
 
-    //user client
+    socket.on('singlePic', function(user, bitmap){
+        logged_users[user].emit('singlePic', bitmap);
+    });
+
+    //user
     socket.on('userLoginWithSessionID', function(ID){
         console.log('userLoginWithSessionID: ' + ID);
 
+        var uniqueID = uniqueid.time();
+        uniqueID = uniqueID.substring(4,8);
+
         if (IDs.indexOf(ID) > -1) {
             //In the array!
-            //saving socket
-            logged_users[socket] = ID;
+            //saving session ID and socket
+            get_users_by_ID[uniqueID] = ID;
+            logged_users[uniqueID] = socket;
 
-            socket.emit('successSessionID');
+            socket.emit('userID', uniqueID);
+            console.log('in IDs');
         } else {
             //Not in the array!
             socket.emit('errorTypingSessionID');
+            console.log('not in IDs');
         }
+    });
+
+    socket.on('singlePicRequest', function(user, sessionID){
+        logged_profs[sessionID].emit('singlePicRequest', user);
     });
 
     //todo save ips automatically
@@ -62,9 +82,5 @@ io.on('connection', function (socket) {
        //save data for proving usage of app to advertisers
     });
 
-    socket.on('singlePicRequest', function(slideBitmap){
-        //send user
-    });
-
-    //todo tell client software to attach ad to image collection, save collection to pdf and disconnect from server
+    //todo ads
 });
